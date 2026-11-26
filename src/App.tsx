@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Clock, Play, Pause, Square, Camera, Fingerprint,
-  AlertTriangle, CheckCircle, Users, Truck, Package,
+  AlertTriangle, CheckCircle, User, Truck, Package,
   FileText, Edit3, Trash2, LogOut, Bell, Utensils,
-  History, X, Upload, Download, Wrench, Cloud, CloudOff
+  History, X, Upload, Download, Wrench, Cloud, CloudOff,
+  KeyRound, Shield, Save
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { createClient } from '@supabase/supabase-js';
@@ -27,9 +28,9 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_USERS = [
-  { id: 'admin-1', username: 'admin', password: '123', name: 'Gestor de Tráfego', role: 'manager' },
-  { id: 'drv-1', username: 'joao', password: '123', name: 'João Silva', role: 'driver' },
-  { id: 'drv-2', username: 'carlos', password: '123', name: 'Carlos Mendes', role: 'driver' }
+  { id: 'admin-1', username: 'admin', password: '123', name: 'Gestor de Tráfego', phone: '', email: '', role: 'manager' },
+  { id: 'drv-1', username: 'joao', password: '123', name: 'João Silva', phone: '', email: '', role: 'driver' },
+  { id: 'drv-2', username: 'carlos', password: '123', name: 'Carlos Mendes', phone: '', email: '', role: 'driver' }
 ];
 
 const DEFAULT_TRUCKS = [
@@ -146,6 +147,245 @@ const generateAnomalyPDF = (item) => {
 
   doc.save(`JJTEIXEIRA_${item.category}_${Date.now()}.pdf`);
 };
+
+// ==========================================
+// COMPONENTE: MINHA CONTA (DADOS E SENHA)
+// ==========================================
+function MyAccountPanel({ user, users, setUsers, setCurrentUser, shifts = [] }) {
+  const [name, setName] = useState(user.name || '');
+  const [username, setUsername] = useState(user.username || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [profileFeedback, setProfileFeedback] = useState({ type: '', text: '' });
+
+  const [currentPass, setCurrentPass] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [passFeedback, setPassFeedback] = useState({ type: '', text: '' });
+
+  const myShifts = shifts.filter((s) => s.driverId === user.id);
+  const totalOvertime = myShifts.reduce((acc, s) => acc + (parseFloat(s.overtimeHours) || 0), 0);
+
+  const handleProfileSave = (e) => {
+    e.preventDefault();
+    setProfileFeedback({ type: '', text: '' });
+
+    const cleanName = name.trim();
+    const cleanUsername = username.trim().toLowerCase();
+
+    if (!cleanName || !cleanUsername) {
+      setProfileFeedback({ type: 'error', text: 'O nome e o utilizador são obrigatórios.' });
+      return;
+    }
+
+    const duplicate = users.some(
+      (u) => u.id !== user.id && u.username.toLowerCase() === cleanUsername
+    );
+    if (duplicate) {
+      setProfileFeedback({ type: 'error', text: `O utilizador "${cleanUsername}" já está a ser utilizado.` });
+      return;
+    }
+
+    const updatedFields = {
+      name: cleanName,
+      username: cleanUsername,
+      phone: phone.trim(),
+      email: email.trim()
+    };
+
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, ...updatedFields } : u))
+    );
+    setCurrentUser((prev) => ({ ...prev, ...updatedFields }));
+    setProfileFeedback({ type: 'success', text: 'Dados da conta atualizados com sucesso!' });
+  };
+
+  const handlePasswordChange = (e) => {
+    e.preventDefault();
+    setPassFeedback({ type: '', text: '' });
+
+    if (currentPass !== user.password) {
+      setPassFeedback({ type: 'error', text: 'A palavra-passe atual está incorreta.' });
+      return;
+    }
+    if (newPass.length < 3) {
+      setPassFeedback({ type: 'error', text: 'A nova palavra-passe deve ter pelo menos 3 caracteres.' });
+      return;
+    }
+    if (newPass !== confirmPass) {
+      setPassFeedback({ type: 'error', text: 'A confirmação da nova palavra-passe não coincide.' });
+      return;
+    }
+
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, password: newPass } : u))
+    );
+    setCurrentUser((prev) => ({ ...prev, password: newPass }));
+    setCurrentPass('');
+    setNewPass('');
+    setConfirmPass('');
+    setPassFeedback({ type: 'success', text: 'Palavra-passe atualizada com sucesso!' });
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Alterar Dados Pessoais */}
+      <form onSubmit={handleProfileSave} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center gap-3 border-b pb-3">
+          <div className="w-11 h-11 bg-blue-100 text-blue-800 rounded-xl flex items-center justify-center">
+            <User className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-800">Os Meus Dados</h3>
+            <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700">
+              {user.role === 'manager' ? 'Gestor de Tráfego / Admin' : 'Motorista JJTEIXEIRA'}
+            </span>
+          </div>
+        </div>
+
+        {user.role === 'driver' && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-slate-50 border rounded-xl p-3">
+              <p className="text-[11px] font-bold text-slate-500 uppercase">Turnos Registados</p>
+              <p className="text-xl font-extrabold text-slate-800 mt-0.5">{myShifts.length}</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+              <p className="text-[11px] font-bold text-blue-700 uppercase">Horas Extra</p>
+              <p className="text-xl font-extrabold text-blue-900 mt-0.5">{totalOvertime}h</p>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Nome Completo</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Utilizador (Login)</label>
+          <input
+            type="text"
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Telemóvel</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Ex: 912 345 678"
+              className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Ex: nome@jjteixeira.pt"
+              className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+        </div>
+
+        {profileFeedback.text && (
+          <p
+            className={`text-sm p-3 rounded-xl font-medium ${
+              profileFeedback.type === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            }`}
+          >
+            {profileFeedback.text}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition shadow-sm flex items-center justify-center gap-2"
+        >
+          <Save className="w-4 h-4" /> Guardar Dados da Conta
+        </button>
+      </form>
+
+      {/* Alterar Palavra-passe */}
+      <form onSubmit={handlePasswordChange} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="flex items-center gap-2 border-b pb-3">
+          <KeyRound className="w-5 h-5 text-blue-700" />
+          <h3 className="text-lg font-bold text-slate-800">Alterar Palavra-passe</h3>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Palavra-passe Atual</label>
+          <input
+            type="password"
+            required
+            value={currentPass}
+            onChange={(e) => setCurrentPass(e.target.value)}
+            placeholder="Introduza a palavra-passe atual"
+            className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Nova Palavra-passe</label>
+          <input
+            type="password"
+            required
+            value={newPass}
+            onChange={(e) => setNewPass(e.target.value)}
+            placeholder="Introduza a nova palavra-passe"
+            className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Confirmar Nova Palavra-passe</label>
+          <input
+            type="password"
+            required
+            value={confirmPass}
+            onChange={(e) => setConfirmPass(e.target.value)}
+            placeholder="Repita a nova palavra-passe"
+            className="w-full border rounded-xl p-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        {passFeedback.text && (
+          <p
+            className={`text-sm p-3 rounded-xl font-medium ${
+              passFeedback.type === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            }`}
+          >
+            {passFeedback.text}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl transition shadow-sm"
+        >
+          Atualizar Palavra-passe
+        </button>
+      </form>
+    </div>
+  );
+}
 
 // ==========================================
 // COMPONENTE DE CÂMARA / UPLOAD / BIOMETRIA
@@ -367,7 +607,6 @@ export default function App() {
   const [anomalies, setAnomaliesState] = useState(() => loadLocal(STORAGE_KEYS.ANOMALIES, []));
   const [alerts, setAlertsState] = useState(() => loadLocal(STORAGE_KEYS.ALERTS, []));
 
-  // Wrappers que gravam imediatamente no localStorage + Supabase
   const updateState = (setter, key) => (updater) => {
     setter((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -528,7 +767,7 @@ export default function App() {
                   required
                   value={loginUser}
                   onChange={(e) => setLoginUser(e.target.value)}
-                  placeholder="Ex: admin ou joao"
+                  placeholder="Utilizador"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -553,16 +792,13 @@ export default function App() {
                 Entrar
               </button>
             </form>
-
-            <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
-              <p className="font-semibold text-slate-600">Contas de teste:</p>
-              <p>• Gestor: <span className="font-mono font-bold">admin</span> / <span className="font-mono">123</span></p>
-              <p>• Motorista: <span className="font-mono font-bold">joao</span> / <span className="font-mono">123</span></p>
-            </div>
           </div>
         ) : currentUser.role === 'driver' ? (
           <DriverDashboard
             user={currentUser}
+            users={users}
+            setCurrentUser={setCurrentUser}
+            setUsers={setUsers}
             now={now}
             shifts={shifts}
             setShifts={setShifts}
@@ -578,6 +814,8 @@ export default function App() {
           />
         ) : (
           <ManagerDashboard
+            user={currentUser}
+            setCurrentUser={setCurrentUser}
             now={now}
             users={users}
             setUsers={setUsers}
@@ -603,7 +841,7 @@ export default function App() {
 // PAINEL DO MOTORISTA
 // ==========================================
 function DriverDashboard({
-  user, now, shifts, setShifts, incidents, setIncidents,
+  user, users, setCurrentUser, setUsers, now, shifts, setShifts, incidents, setIncidents,
   materials, setMaterials, trucks, anomalies, setAnomalies,
   setAlerts, getLocation
 }) {
@@ -816,7 +1054,8 @@ function DriverDashboard({
           { id: 'history', label: 'Meu Histórico', icon: History },
           { id: 'incidents', label: 'Acidentes / Carga', icon: Camera },
           { id: 'materials', label: 'Pedir Material', icon: Package },
-          { id: 'anomalies', label: 'Avarias Camião', icon: Wrench }
+          { id: 'anomalies', label: 'Avarias Camião', icon: Wrench },
+          { id: 'account', label: 'Minha Conta', icon: User }
         ].map((t) => (
           <button
             key={t.id}
@@ -1150,6 +1389,16 @@ function DriverDashboard({
         </div>
       )}
 
+      {tab === 'account' && (
+        <MyAccountPanel
+          user={user}
+          users={users}
+          setUsers={setUsers}
+          setCurrentUser={setCurrentUser}
+          shifts={shifts}
+        />
+      )}
+
       {showEndForm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1225,17 +1474,18 @@ function DriverDashboard({
 }
 
 // ==========================================
-// PAINEL DO GESTOR DE TRÁFEGO
+// PAINEL DO GESTOR DE TRÁFEGO / ADMIN
 // ==========================================
 function ManagerDashboard({
-  now, users, setUsers, shifts, setShifts, incidents,
+  user, setCurrentUser, now, users, setUsers, shifts, setShifts, incidents,
   materials, setMaterials, trucks, setTrucks, anomalies,
   setAnomalies, alerts, setAlerts
 }) {
   const [tab, setTab] = useState('timesheet');
   const [filterDriver, setFilterDriver] = useState('all');
   const [editingShift, setEditingShift] = useState(null);
-  const [newDriver, setNewDriver] = useState({ name: '', username: '', password: '' });
+  const [newAccount, setNewAccount] = useState({ name: '', username: '', password: '', role: 'driver' });
+  const [accountError, setAccountError] = useState('');
   const [newTruck, setNewTruck] = useState({ plate: '', model: '' });
 
   const drivers = users.filter((u) => u.role === 'driver');
@@ -1290,11 +1540,39 @@ function ManagerDashboard({
     );
   };
 
-  const createDriver = (e) => {
+  const createAccount = (e) => {
     e.preventDefault();
-    if (!newDriver.name || !newDriver.username || !newDriver.password) return;
-    setUsers((prev) => [...prev, { id: `drv-${Date.now()}`, ...newDriver, role: 'driver' }]);
-    setNewDriver({ name: '', username: '', password: '' });
+    setAccountError('');
+    const cleanUsername = newAccount.username.trim().toLowerCase();
+    if (!newAccount.name.trim() || !cleanUsername || !newAccount.password) return;
+
+    const exists = users.some((u) => u.username.toLowerCase() === cleanUsername);
+    if (exists) {
+      setAccountError(`O utilizador "${cleanUsername}" já existe.`);
+      return;
+    }
+
+    setUsers((prev) => [
+      ...prev,
+      {
+        id: `${newAccount.role === 'manager' ? 'admin' : 'drv'}-${Date.now()}`,
+        name: newAccount.name.trim(),
+        username: cleanUsername,
+        password: newAccount.password,
+        phone: '',
+        email: '',
+        role: newAccount.role
+      }
+    ]);
+    setNewAccount({ name: '', username: '', password: '', role: 'driver' });
+  };
+
+  const deleteAccount = (targetUser) => {
+    if (targetUser.id === user.id) {
+      alert('Não pode eliminar a conta que está a utilizar neste momento.');
+      return;
+    }
+    setUsers((prev) => prev.filter((u) => u.id !== targetUser.id));
   };
 
   const createTruck = (e) => {
@@ -1357,7 +1635,8 @@ function ManagerDashboard({
           { id: 'incidents', label: 'Ocorrências', icon: Camera },
           { id: 'materials', label: 'Material', icon: Package },
           { id: 'trucks', label: 'Camiões & Avarias', icon: Truck },
-          { id: 'drivers', label: 'Motoristas', icon: Users }
+          { id: 'admin', label: 'Administração', icon: Shield },
+          { id: 'account', label: 'Minha Conta', icon: User }
         ].map((t) => (
           <button
             key={t.id}
@@ -1579,33 +1858,115 @@ function ManagerDashboard({
         </div>
       )}
 
-      {tab === 'drivers' && (
+      {/* PÁGINA DE ADMINISTRAÇÃO DE LOGINS */}
+      {tab === 'admin' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <form onSubmit={createDriver} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
-            <h3 className="text-lg font-bold">Criar Conta de Motorista</h3>
-            <input required placeholder="Nome Completo" value={newDriver.name} onChange={(e) => setNewDriver({ ...newDriver, name: e.target.value })} className="w-full border rounded-xl p-2.5" />
-            <input required placeholder="Utilizador (login)" value={newDriver.username} onChange={(e) => setNewDriver({ ...newDriver, username: e.target.value })} className="w-full border rounded-xl p-2.5" />
-            <input required type="password" placeholder="Palavra-passe" value={newDriver.password} onChange={(e) => setNewDriver({ ...newDriver, password: e.target.value })} className="w-full border rounded-xl p-2.5" />
-            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl">
-              Criar Motorista
+          <form onSubmit={createAccount} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
+            <div className="flex items-center gap-2 border-b pb-3">
+              <Shield className="w-5 h-5 text-blue-700" />
+              <h3 className="text-lg font-bold">Criar Novo Login</h3>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Tipo de Conta</label>
+              <select
+                value={newAccount.role}
+                onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}
+                className="w-full border rounded-xl p-2.5"
+              >
+                <option value="driver">Motorista</option>
+                <option value="manager">Gestor / Administrador</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Nome Completo</label>
+              <input
+                required
+                placeholder="Ex: Manuel Costa"
+                value={newAccount.name}
+                onChange={(e) => setNewAccount({ ...newAccount, name: e.target.value })}
+                className="w-full border rounded-xl p-2.5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Utilizador (Login)</label>
+              <input
+                required
+                placeholder="Ex: manuel"
+                value={newAccount.username}
+                onChange={(e) => setNewAccount({ ...newAccount, username: e.target.value })}
+                className="w-full border rounded-xl p-2.5"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Palavra-passe</label>
+              <input
+                required
+                type="password"
+                placeholder="Defina a palavra-passe"
+                value={newAccount.password}
+                onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })}
+                className="w-full border rounded-xl p-2.5"
+              />
+            </div>
+            {accountError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-200">{accountError}</p>
+            )}
+            <button type="submit" className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition">
+              Criar Login
             </button>
           </form>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-3">
-            <h3 className="text-lg font-bold">Motoristas Registados</h3>
-            {drivers.map((d) => (
-              <div key={d.id} className="border rounded-xl p-3 flex justify-between items-center bg-slate-50">
-                <div>
-                  <p className="font-bold text-sm">{d.name}</p>
-                  <p className="text-xs text-slate-500">User: {d.username} | Pass: {d.password}</p>
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="text-lg font-bold">Logins Registados ({users.length})</h3>
+            </div>
+            <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+              {users.map((u) => (
+                <div key={u.id} className="border rounded-xl p-3 flex justify-between items-center bg-slate-50">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-slate-800">{u.name}</p>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                          u.role === 'manager'
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}
+                      >
+                        {u.role === 'manager' ? 'Admin' : 'Motorista'}
+                      </span>
+                      {u.id === user.id && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                          Tu
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      User: <span className="font-mono font-semibold">{u.username}</span> | Pass: <span className="font-mono">{u.password}</span>
+                    </p>
+                  </div>
+                  <button
+                    disabled={u.id === user.id}
+                    onClick={() => deleteAccount(u)}
+                    className="text-red-500 hover:text-red-700 disabled:opacity-30 disabled:cursor-not-allowed p-2 rounded-lg hover:bg-red-50 transition"
+                    title={u.id === user.id ? 'Não pode eliminar a própria conta' : 'Eliminar login'}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
-                <button onClick={() => setUsers((prev) => prev.filter((u) => u.id !== d.id))} className="text-red-500 hover:text-red-700 p-2">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
+      )}
+
+      {tab === 'account' && (
+        <MyAccountPanel
+          user={user}
+          users={users}
+          setUsers={setUsers}
+          setCurrentUser={setCurrentUser}
+        />
       )}
 
       {editingShift && (
