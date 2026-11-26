@@ -1,38 +1,21 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Clock,
-  Play,
-  Pause,
-  Square,
-  MapPin,
-  Camera,
-  Fingerprint,
-  AlertTriangle,
-  CheckCircle,
-  User,
-  Users,
-  Truck,
-  Package,
-  FileText,
-  Edit3,
-  Trash2,
-  Plus,
-  LogOut,
-  Bell,
-  Utensils,
-  History,
-  ShieldCheck,
-  X,
-  Upload,
-  Download,
-  Wrench,
+  Clock, Play, Pause, Square, Camera, Fingerprint,
+  AlertTriangle, CheckCircle, Users, Truck, Package,
+  FileText, Edit3, Trash2, LogOut, Bell, Utensils,
+  History, X, Upload, Download, Wrench, Cloud, CloudOff
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { createClient } from '@supabase/supabase-js';
 
 // ==========================================
-// CONFIGURAÇÃO DE ARMAZENAMENTO (LOCAL / NUVEM)
+// LIGAÇÃO AO SUPABASE (NUVEM)
 // ==========================================
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+
 const STORAGE_KEYS = {
   USERS: 'jjt_users_v2',
   SHIFTS: 'jjt_shifts_v2',
@@ -40,40 +23,22 @@ const STORAGE_KEYS = {
   MATERIALS: 'jjt_materials_v2',
   TRUCKS: 'jjt_trucks_v2',
   ANOMALIES: 'jjt_anomalies_v2',
-  ALERTS: 'jjt_alerts_v2',
+  ALERTS: 'jjt_alerts_v2'
 };
 
 const DEFAULT_USERS = [
-  {
-    id: 'admin-1',
-    username: 'admin',
-    password: '123',
-    name: 'Gestor de Tráfego',
-    role: 'manager',
-  },
-  {
-    id: 'drv-1',
-    username: 'joao',
-    password: '123',
-    name: 'João Silva',
-    role: 'driver',
-  },
-  {
-    id: 'drv-2',
-    username: 'carlos',
-    password: '123',
-    name: 'Carlos Mendes',
-    role: 'driver',
-  },
+  { id: 'admin-1', username: 'admin', password: '123', name: 'Gestor de Tráfego', role: 'manager' },
+  { id: 'drv-1', username: 'joao', password: '123', name: 'João Silva', role: 'driver' },
+  { id: 'drv-2', username: 'carlos', password: '123', name: 'Carlos Mendes', role: 'driver' }
 ];
 
 const DEFAULT_TRUCKS = [
   { id: 't-1', plate: 'AA-12-BB', model: 'Volvo FH 500', history: [] },
   { id: 't-2', plate: 'CC-34-DD', model: 'Scania R450', history: [] },
-  { id: 't-3', plate: 'EE-56-FF', model: 'Mercedes Actros', history: [] },
+  { id: 't-3', plate: 'EE-56-FF', model: 'Mercedes Actros', history: [] }
 ];
 
-const loadData = (key, fallback) => {
+const loadLocal = (key, fallback) => {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -82,11 +47,20 @@ const loadData = (key, fallback) => {
   }
 };
 
-const saveData = (key, data) => {
+const saveEverywhere = async (key, data) => {
   try {
     localStorage.setItem(key, JSON.stringify(data));
   } catch (e) {
-    console.error('Erro ao gravar dados:', e);
+    console.error('Erro localStorage:', e);
+  }
+  if (supabase) {
+    try {
+      await supabase
+        .from('app_data')
+        .upsert({ key, value: data, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    } catch (e) {
+      console.error('Erro Supabase:', e);
+    }
   }
 };
 
@@ -98,20 +72,15 @@ const formatDuration = (seconds) => {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(
-    sec
-  ).padStart(2, '0')}`;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 };
 
 const formatDateTime = (iso) => {
   if (!iso) return '---';
   const d = new Date(iso);
   return d.toLocaleString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
   });
 };
 
@@ -164,10 +133,7 @@ const generateAnomalyPDF = (item) => {
   doc.text('Descrição / Detalhes:', 14, y);
   y += 8;
   doc.setFont(undefined, 'normal');
-  const splitDesc = doc.splitTextToSize(
-    item.description || 'Sem descrição adicional.',
-    180
-  );
+  const splitDesc = doc.splitTextToSize(item.description || 'Sem descrição adicional.', 180);
   doc.text(splitDesc, 14, y);
   y += splitDesc.length * 7 + 20;
 
@@ -185,7 +151,7 @@ const generateAnomalyPDF = (item) => {
 // COMPONENTE DE CÂMARA / UPLOAD / BIOMETRIA
 // ==========================================
 function ValidationModal({ title, onConfirm, onCancel }) {
-  const [method, setMethod] = useState('photo'); // 'photo' | 'fingerprint'
+  const [method, setMethod] = useState('photo');
   const [photo, setPhoto] = useState(null);
   const [cameraError, setCameraError] = useState(false);
   const [fingerProgress, setFingerProgress] = useState(0);
@@ -229,7 +195,7 @@ function ValidationModal({ title, onConfirm, onCancel }) {
     canvas.height = 240;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.65);
     setPhoto(dataUrl);
     streamRef.current?.getTracks().forEach((t) => t.stop());
   };
@@ -262,10 +228,7 @@ function ValidationModal({ title, onConfirm, onCancel }) {
       <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-          <button
-            onClick={onCancel}
-            className="text-slate-400 hover:text-slate-600"
-          >
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -297,11 +260,7 @@ function ValidationModal({ title, onConfirm, onCancel }) {
           <div className="space-y-3">
             {photo ? (
               <div className="relative">
-                <img
-                  src={photo}
-                  alt="Validação"
-                  className="w-full h-56 object-cover rounded-xl border"
-                />
+                <img src={photo} alt="Validação" className="w-full h-56 object-cover rounded-xl border" />
                 <button
                   onClick={() => setPhoto(null)}
                   className="mt-2 w-full py-2 text-sm text-blue-600 font-medium hover:underline"
@@ -313,17 +272,11 @@ function ValidationModal({ title, onConfirm, onCancel }) {
               <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-6 text-center">
                 <Camera className="w-10 h-10 text-slate-400 mx-auto mb-2" />
                 <p className="text-sm text-slate-600 mb-3">
-                  Câmara não detetada neste dispositivo. Carregue uma
-                  fotografia:
+                  Câmara não detetada neste dispositivo. Carregue uma fotografia:
                 </p>
                 <label className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-blue-700 text-sm font-medium">
                   <Upload className="w-4 h-4" /> Carregar Fotografia
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
+                  <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                 </label>
               </div>
             ) : (
@@ -344,12 +297,7 @@ function ValidationModal({ title, onConfirm, onCancel }) {
                   </button>
                   <label className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl cursor-pointer hover:bg-slate-200 flex items-center">
                     <Upload className="w-4 h-4" />
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                   </label>
                 </div>
               </div>
@@ -409,50 +357,72 @@ export default function App() {
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [cloudConnected, setCloudConnected] = useState(false);
 
-  // Estados persistentes
-  const [users, setUsers] = useState(() =>
-    loadData(STORAGE_KEYS.USERS, DEFAULT_USERS)
-  );
-  const [shifts, setShifts] = useState(() => loadData(STORAGE_KEYS.SHIFTS, []));
-  const [incidents, setIncidents] = useState(() =>
-    loadData(STORAGE_KEYS.INCIDENTS, [])
-  );
-  const [materials, setMaterials] = useState(() =>
-    loadData(STORAGE_KEYS.MATERIALS, [])
-  );
-  const [trucks, setTrucks] = useState(() =>
-    loadData(STORAGE_KEYS.TRUCKS, DEFAULT_TRUCKS)
-  );
-  const [anomalies, setAnomalies] = useState(() =>
-    loadData(STORAGE_KEYS.ANOMALIES, [])
-  );
-  const [alerts, setAlerts] = useState(() => loadData(STORAGE_KEYS.ALERTS, []));
+  const [users, setUsersState] = useState(() => loadLocal(STORAGE_KEYS.USERS, DEFAULT_USERS));
+  const [shifts, setShiftsState] = useState(() => loadLocal(STORAGE_KEYS.SHIFTS, []));
+  const [incidents, setIncidentsState] = useState(() => loadLocal(STORAGE_KEYS.INCIDENTS, []));
+  const [materials, setMaterialsState] = useState(() => loadLocal(STORAGE_KEYS.MATERIALS, []));
+  const [trucks, setTrucksState] = useState(() => loadLocal(STORAGE_KEYS.TRUCKS, DEFAULT_TRUCKS));
+  const [anomalies, setAnomaliesState] = useState(() => loadLocal(STORAGE_KEYS.ANOMALIES, []));
+  const [alerts, setAlertsState] = useState(() => loadLocal(STORAGE_KEYS.ALERTS, []));
 
-  // Relógio global sempre ativo (atualiza a cada segundo)
+  // Wrappers que gravam imediatamente no localStorage + Supabase
+  const updateState = (setter, key) => (updater) => {
+    setter((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveEverywhere(key, next);
+      return next;
+    });
+  };
+
+  const setUsers = updateState(setUsersState, STORAGE_KEYS.USERS);
+  const setShifts = updateState(setShiftsState, STORAGE_KEYS.SHIFTS);
+  const setIncidents = updateState(setIncidentsState, STORAGE_KEYS.INCIDENTS);
+  const setMaterials = updateState(setMaterialsState, STORAGE_KEYS.MATERIALS);
+  const setTrucks = updateState(setTrucksState, STORAGE_KEYS.TRUCKS);
+  const setAnomalies = updateState(setAnomaliesState, STORAGE_KEYS.ANOMALIES);
+  const setAlerts = updateState(setAlertsState, STORAGE_KEYS.ALERTS);
+
+  // Sincronização automática com o Supabase a cada 5 segundos
+  useEffect(() => {
+    if (!supabase) return;
+
+    const syncFromCloud = async () => {
+      const { data, error } = await supabase.from('app_data').select('key, value');
+      if (error) {
+        setCloudConnected(false);
+        return;
+      }
+      setCloudConnected(true);
+      const map = {};
+      (data || []).forEach((row) => {
+        map[row.key] = row.value;
+      });
+      if (map[STORAGE_KEYS.USERS]) setUsersState(map[STORAGE_KEYS.USERS]);
+      if (map[STORAGE_KEYS.SHIFTS]) setShiftsState(map[STORAGE_KEYS.SHIFTS]);
+      if (map[STORAGE_KEYS.INCIDENTS]) setIncidentsState(map[STORAGE_KEYS.INCIDENTS]);
+      if (map[STORAGE_KEYS.MATERIALS]) setMaterialsState(map[STORAGE_KEYS.MATERIALS]);
+      if (map[STORAGE_KEYS.TRUCKS]) setTrucksState(map[STORAGE_KEYS.TRUCKS]);
+      if (map[STORAGE_KEYS.ANOMALIES]) setAnomaliesState(map[STORAGE_KEYS.ANOMALIES]);
+      if (map[STORAGE_KEYS.ALERTS]) setAlertsState(map[STORAGE_KEYS.ALERTS]);
+    };
+
+    syncFromCloud();
+    const interval = setInterval(syncFromCloud, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Relógio global sempre ativo
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Gravação automática
-  useEffect(() => saveData(STORAGE_KEYS.USERS, users), [users]);
-  useEffect(() => saveData(STORAGE_KEYS.SHIFTS, shifts), [shifts]);
-  useEffect(() => saveData(STORAGE_KEYS.INCIDENTS, incidents), [incidents]);
-  useEffect(() => saveData(STORAGE_KEYS.MATERIALS, materials), [materials]);
-  useEffect(() => saveData(STORAGE_KEYS.TRUCKS, trucks), [trucks]);
-  useEffect(() => saveData(STORAGE_KEYS.ANOMALIES, anomalies), [anomalies]);
-  useEffect(() => saveData(STORAGE_KEYS.ALERTS, alerts), [alerts]);
-
-  // Captura GPS
   const getLocation = () =>
     new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve({
-          lat: 41.1579,
-          lng: -8.6291,
-          label: 'GPS indisponível (Porto)',
-        });
+        resolve({ lat: 41.1579, lng: -8.6291, label: 'GPS indisponível' });
         return;
       }
       navigator.geolocation.getCurrentPosition(
@@ -460,16 +430,9 @@ export default function App() {
           resolve({
             lat: pos.coords.latitude,
             lng: pos.coords.longitude,
-            label: `${pos.coords.latitude.toFixed(
-              5
-            )}, ${pos.coords.longitude.toFixed(5)}`,
+            label: `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`
           }),
-        () =>
-          resolve({
-            lat: 41.1579,
-            lng: -8.6291,
-            label: 'Localização não autorizada',
-          }),
+        () => resolve({ lat: 41.1579, lng: -8.6291, label: 'Localização não autorizada' }),
         { timeout: 5000 }
       );
     });
@@ -477,9 +440,7 @@ export default function App() {
   const handleLogin = (e) => {
     e.preventDefault();
     const found = users.find(
-      (u) =>
-        u.username.toLowerCase() === loginUser.trim().toLowerCase() &&
-        u.password === loginPass
+      (u) => u.username.toLowerCase() === loginUser.trim().toLowerCase() && u.password === loginPass
     );
     if (!found) {
       setLoginError('Utilizador ou palavra-passe incorretos.');
@@ -493,7 +454,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col">
-      {/* CABEÇALHO GLOBAL COM RELÓGIO SEMPRE VISÍVEL */}
+      {/* CABEÇALHO GLOBAL */}
       <header className="bg-blue-900 text-white shadow-lg sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -501,21 +462,26 @@ export default function App() {
               <Truck className="w-6 h-6 text-amber-400" />
             </div>
             <div>
-              <h1 className="font-extrabold tracking-wide text-lg leading-tight">
-                JJTEIXEIRA
-              </h1>
-              <p className="text-xs text-blue-200">
-                Controlo de Frota & Livro de Ponto
-              </p>
+              <h1 className="font-extrabold tracking-wide text-lg leading-tight">JJTEIXEIRA</h1>
+              <div className="flex items-center gap-2 text-xs text-blue-200">
+                <span>Controlo de Frota</span>
+                {cloudConnected ? (
+                  <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded-full">
+                    <Cloud className="w-3 h-3" /> Nuvem
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded-full">
+                    <CloudOff className="w-3 h-3" /> Local
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
             <div className="bg-blue-950/70 border border-blue-700/60 px-4 py-1.5 rounded-xl flex items-center gap-2 font-mono">
               <Clock className="w-4 h-4 text-amber-400" />
-              <span className="font-bold text-base">
-                {now.toLocaleTimeString('pt-PT')}
-              </span>
+              <span className="font-bold text-base">{now.toLocaleTimeString('pt-PT')}</span>
               <span className="text-xs text-blue-300 hidden sm:inline">
                 | {now.toLocaleDateString('pt-PT')}
               </span>
@@ -524,13 +490,9 @@ export default function App() {
             {currentUser && (
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-semibold leading-tight">
-                    {currentUser.name}
-                  </p>
+                  <p className="text-sm font-semibold leading-tight">{currentUser.name}</p>
                   <p className="text-xs text-blue-300">
-                    {currentUser.role === 'manager'
-                      ? 'Gestor de Tráfego'
-                      : 'Motorista'}
+                    {currentUser.role === 'manager' ? 'Gestor de Tráfego' : 'Motorista'}
                   </p>
                 </div>
                 <button
@@ -554,19 +516,13 @@ export default function App() {
               <div className="w-16 h-16 bg-blue-100 text-blue-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <Truck className="w-9 h-9" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-800">
-                Acesso JJTEIXEIRA
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Introduza as suas credenciais
-              </p>
+              <h2 className="text-2xl font-bold text-slate-800">Acesso JJTEIXEIRA</h2>
+              <p className="text-sm text-slate-500 mt-1">Introduza as suas credenciais</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Utilizador
-                </label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Utilizador</label>
                 <input
                   type="text"
                   required
@@ -577,9 +533,7 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Palavra-passe
-                </label>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Palavra-passe</label>
                 <input
                   type="password"
                   required
@@ -590,9 +544,7 @@ export default function App() {
                 />
               </div>
               {loginError && (
-                <p className="text-sm text-red-600 bg-red-50 p-2.5 rounded-lg">
-                  {loginError}
-                </p>
+                <p className="text-sm text-red-600 bg-red-50 p-2.5 rounded-lg">{loginError}</p>
               )}
               <button
                 type="submit"
@@ -604,14 +556,8 @@ export default function App() {
 
             <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-500 space-y-1">
               <p className="font-semibold text-slate-600">Contas de teste:</p>
-              <p>
-                • Gestor: <span className="font-mono font-bold">admin</span> /{' '}
-                <span className="font-mono">123</span>
-              </p>
-              <p>
-                • Motorista: <span className="font-mono font-bold">joao</span> /{' '}
-                <span className="font-mono">123</span>
-              </p>
+              <p>• Gestor: <span className="font-mono font-bold">admin</span> / <span className="font-mono">123</span></p>
+              <p>• Motorista: <span className="font-mono font-bold">joao</span> / <span className="font-mono">123</span></p>
             </div>
           </div>
         ) : currentUser.role === 'driver' ? (
@@ -654,31 +600,20 @@ export default function App() {
 }
 
 // ==========================================
-// PAINEL DO MOTORISTA (VÊ APENAS OS SEUS DADOS)
+// PAINEL DO MOTORISTA
 // ==========================================
 function DriverDashboard({
-  user,
-  now,
-  shifts,
-  setShifts,
-  incidents,
-  setIncidents,
-  materials,
-  setMaterials,
-  trucks,
-  anomalies,
-  setAnomalies,
-  setAlerts,
-  getLocation,
+  user, now, shifts, setShifts, incidents, setIncidents,
+  materials, setMaterials, trucks, anomalies, setAnomalies,
+  setAlerts, getLocation
 }) {
-  const [tab, setTab] = useState('shift'); // shift | history | incidents | materials | anomalies
-  const [validationAction, setValidationAction] = useState(null); // 'start' | 'end'
+  const [tab, setTab] = useState('shift');
+  const [validationAction, setValidationAction] = useState(null);
   const [showEndForm, setShowEndForm] = useState(false);
   const [endNotes, setEndNotes] = useState('');
   const [endOvertime, setEndOvertime] = useState('0');
   const [smsAlertOpen, setSmsAlertOpen] = useState(false);
 
-  // Formulários
   const [incType, setIncType] = useState('Carga Danificada');
   const [incTruck, setIncTruck] = useState(trucks[0]?.plate || '');
   const [incDesc, setIncDesc] = useState('');
@@ -696,39 +631,24 @@ function DriverDashboard({
   const myShifts = shifts.filter((s) => s.driverId === user.id);
   const activeShift = myShifts.find((s) => !s.endTime);
 
-  // Cálculo em tempo real do turno ativo
   const getLiveStats = (shift) => {
     if (!shift) return { driving: 0, pause: 0, meal: 0, continuous: 0 };
     const elapsedSinceLast = Math.max(
       0,
-      Math.floor(
-        (now.getTime() - new Date(shift.lastStateChange).getTime()) / 1000
-      )
+      Math.floor((now.getTime() - new Date(shift.lastStateChange).getTime()) / 1000)
     );
-    const driving =
-      shift.drivingSeconds +
-      (shift.status === 'driving' ? elapsedSinceLast : 0);
-    const pause =
-      shift.pauseSeconds + (shift.status === 'pause' ? elapsedSinceLast : 0);
-    const meal =
-      shift.mealSeconds + (shift.status === 'meal' ? elapsedSinceLast : 0);
+    const driving = shift.drivingSeconds + (shift.status === 'driving' ? elapsedSinceLast : 0);
+    const pause = shift.pauseSeconds + (shift.status === 'pause' ? elapsedSinceLast : 0);
+    const meal = shift.mealSeconds + (shift.status === 'meal' ? elapsedSinceLast : 0);
     const continuous =
-      shift.status === 'driving'
-        ? shift.continuousDrivingSeconds + elapsedSinceLast
-        : 0;
+      shift.status === 'driving' ? shift.continuousDrivingSeconds + elapsedSinceLast : 0;
     return { driving, pause, meal, continuous };
   };
 
   const live = getLiveStats(activeShift);
 
-  // Alerta SMS às 4 horas (14400s) de condução contínua
   useEffect(() => {
-    if (
-      activeShift &&
-      activeShift.status === 'driving' &&
-      live.continuous >= 14400 &&
-      !activeShift.sms4hAck
-    ) {
+    if (activeShift && activeShift.status === 'driving' && live.continuous >= 14400 && !activeShift.sms4hAck) {
       setSmsAlertOpen(true);
     }
   }, [live.continuous, activeShift]);
@@ -748,7 +668,7 @@ function DriverDashboard({
           ? {
               ...s,
               drivingSeconds: s.drivingSeconds + 3600,
-              continuousDrivingSeconds: s.continuousDrivingSeconds + 3600,
+              continuousDrivingSeconds: s.continuousDrivingSeconds + 3600
             }
           : s
       )
@@ -770,7 +690,7 @@ function DriverDashboard({
         endLocation: null,
         startValidation: valData,
         endValidation: null,
-        status: 'driving', // driving | pause | meal | ended
+        status: 'driving',
         lastStateChange: timestamp,
         drivingSeconds: 0,
         pauseSeconds: 0,
@@ -779,7 +699,7 @@ function DriverDashboard({
         sms4hAck: false,
         overtimeHours: 0,
         notes: '',
-        validatedByManager: false,
+        validatedByManager: false
       };
       setShifts((prev) => [newShift, ...prev]);
     } else if (validationAction === 'end' && activeShift) {
@@ -798,7 +718,7 @@ function DriverDashboard({
                 mealSeconds: stats.meal,
                 continuousDrivingSeconds: 0,
                 overtimeHours: parseFloat(endOvertime) || 0,
-                notes: endNotes.trim(),
+                notes: endNotes.trim()
               }
             : s
         )
@@ -823,9 +743,8 @@ function DriverDashboard({
               drivingSeconds: stats.driving,
               pauseSeconds: stats.pause,
               mealSeconds: stats.meal,
-              // Pausa ou Almoço reinicia o contador de condução contínua
-              continuousDrivingSeconds: newStatus === 'driving' ? 0 : 0,
-              sms4hAck: newStatus === 'driving' ? false : s.sms4hAck,
+              continuousDrivingSeconds: 0,
+              sms4hAck: newStatus === 'driving' ? false : s.sms4hAck
             }
           : s
       )
@@ -842,7 +761,7 @@ function DriverDashboard({
       truckPlate: incTruck,
       description: incDesc,
       photo: incPhoto,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     };
     setIncidents((prev) => [item, ...prev]);
     setIncDesc('');
@@ -862,7 +781,7 @@ function DriverDashboard({
       quantity: matQty,
       description: matDesc,
       delivered: false,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     };
     setMaterials((prev) => [item, ...prev]);
     setAlerts((prev) => [item, ...prev]);
@@ -881,7 +800,7 @@ function DriverDashboard({
       truckPlate: anomTruck,
       severity: anomSeverity,
       description: anomDesc,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString()
     };
     setAnomalies((prev) => [item, ...prev]);
     setAlerts((prev) => [item, ...prev]);
@@ -891,22 +810,19 @@ function DriverDashboard({
 
   return (
     <div className="space-y-6">
-      {/* Navegação Motorista */}
       <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
         {[
           { id: 'shift', label: 'Turno Atual', icon: Clock },
           { id: 'history', label: 'Meu Histórico', icon: History },
           { id: 'incidents', label: 'Acidentes / Carga', icon: Camera },
           { id: 'materials', label: 'Pedir Material', icon: Package },
-          { id: 'anomalies', label: 'Avarias Camião', icon: Wrench },
+          { id: 'anomalies', label: 'Avarias Camião', icon: Wrench }
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition ${
-              tab === t.id
-                ? 'bg-blue-700 text-white shadow'
-                : 'text-slate-600 hover:bg-slate-100'
+              tab === t.id ? 'bg-blue-700 text-white shadow' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <t.icon className="w-4 h-4" /> {t.label}
@@ -914,7 +830,6 @@ function DriverDashboard({
         ))}
       </div>
 
-      {/* SEPARADOR: TURNO ATUAL */}
       {tab === 'shift' && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
           {!activeShift ? (
@@ -922,12 +837,9 @@ function DriverDashboard({
               <div className="w-20 h-20 bg-blue-50 text-blue-700 rounded-full flex items-center justify-center mx-auto">
                 <Play className="w-10 h-10 ml-1" />
               </div>
-              <h2 className="text-2xl font-bold">
-                Pronto para iniciar o turno?
-              </h2>
+              <h2 className="text-2xl font-bold">Pronto para iniciar o turno?</h2>
               <p className="text-slate-500 max-w-md mx-auto text-sm">
-                A abertura de turno regista a sua localização GPS e requer
-                validação por fotografia facial ou impressão digital.
+                A abertura de turno regista a sua localização GPS e requer validação por fotografia facial ou impressão digital.
               </p>
               <button
                 onClick={() => setValidationAction('start')}
@@ -957,8 +869,7 @@ function DriverDashboard({
                       : 'Almoço / Jantar'}
                   </span>
                   <p className="text-sm text-slate-500 mt-1">
-                    Iniciado às {formatDateTime(activeShift.startTime)} • GPS:{' '}
-                    {activeShift.startLocation?.label}
+                    Iniciado às {formatDateTime(activeShift.startTime)} • GPS: {activeShift.startLocation?.label}
                   </p>
                 </div>
 
@@ -972,12 +883,9 @@ function DriverDashboard({
                 )}
               </div>
 
-              {/* Contadores */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-blue-50 border border-blue-200 p-4 rounded-2xl">
-                  <p className="text-xs font-bold text-blue-700 uppercase">
-                    Condução Total
-                  </p>
+                  <p className="text-xs font-bold text-blue-700 uppercase">Condução Total</p>
                   <p className="text-3xl font-mono font-extrabold text-blue-900 mt-1">
                     {formatDuration(live.driving)}
                   </p>
@@ -989,38 +897,29 @@ function DriverDashboard({
                       : 'bg-emerald-50 border-emerald-200'
                   }`}
                 >
-                  <p className="text-xs font-bold uppercase text-slate-600">
-                    Condução Contínua (Max 4h30)
-                  </p>
+                  <p className="text-xs font-bold uppercase text-slate-600">Condução Contínua (Max 4h30)</p>
                   <p
                     className={`text-3xl font-mono font-extrabold mt-1 ${
-                      live.continuous >= 14400
-                        ? 'text-red-600'
-                        : 'text-emerald-800'
+                      live.continuous >= 14400 ? 'text-red-600' : 'text-emerald-800'
                     }`}
                   >
                     {formatDuration(live.continuous)}
                   </p>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl">
-                  <p className="text-xs font-bold text-amber-700 uppercase">
-                    Tempo de Pausa
-                  </p>
+                  <p className="text-xs font-bold text-amber-700 uppercase">Tempo de Pausa</p>
                   <p className="text-3xl font-mono font-extrabold text-amber-900 mt-1">
                     {formatDuration(live.pause)}
                   </p>
                 </div>
                 <div className="bg-purple-50 border border-purple-200 p-4 rounded-2xl">
-                  <p className="text-xs font-bold text-purple-700 uppercase">
-                    Almoço / Jantar
-                  </p>
+                  <p className="text-xs font-bold text-purple-700 uppercase">Almoço / Jantar</p>
                   <p className="text-3xl font-mono font-extrabold text-purple-900 mt-1">
                     {formatDuration(live.meal)}
                   </p>
                 </div>
               </div>
 
-              {/* Botões de Controlo */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                 {activeShift.status !== 'driving' ? (
                   <button
@@ -1058,37 +957,23 @@ function DriverDashboard({
         </div>
       )}
 
-      {/* SEPARADOR: HISTÓRICO DO MOTORISTA */}
       {tab === 'history' && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-bold mb-4">O Meu Histórico de Turnos</h3>
           {myShifts.length === 0 ? (
-            <p className="text-slate-500 text-sm">
-              Ainda não tem turnos registados.
-            </p>
+            <p className="text-slate-500 text-sm">Ainda não tem turnos registados.</p>
           ) : (
             <div className="space-y-3">
               {myShifts.map((s) => (
-                <div
-                  key={s.id}
-                  className="border rounded-xl p-4 flex flex-wrap justify-between gap-4 bg-slate-50"
-                >
+                <div key={s.id} className="border rounded-xl p-4 flex flex-wrap justify-between gap-4 bg-slate-50">
                   <div>
                     <p className="font-bold text-slate-800">
-                      Início: {formatDateTime(s.startTime)} | Fim:{' '}
-                      {formatDateTime(s.endTime)}
+                      Início: {formatDateTime(s.startTime)} | Fim: {formatDateTime(s.endTime)}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Condução: {formatDuration(s.drivingSeconds)} • Pausa:{' '}
-                      {formatDuration(s.pauseSeconds)} • Almoço/Jantar:{' '}
-                      {formatDuration(s.mealSeconds)} • Horas Extra:{' '}
-                      <strong>{s.overtimeHours || 0}h</strong>
+                      Condução: {formatDuration(s.drivingSeconds)} • Pausa: {formatDuration(s.pauseSeconds)} • Almoço/Jantar: {formatDuration(s.mealSeconds)} • Horas Extra: <strong>{s.overtimeHours || 0}h</strong>
                     </p>
-                    {s.notes && (
-                      <p className="text-xs text-slate-600 mt-1 italic">
-                        Obs: "{s.notes}"
-                      </p>
-                    )}
+                    {s.notes && <p className="text-xs text-slate-600 mt-1 italic">Obs: "{s.notes}"</p>}
                   </div>
                   <span
                     className={`self-start px-3 py-1 rounded-full text-xs font-bold ${
@@ -1106,63 +991,32 @@ function DriverDashboard({
         </div>
       )}
 
-      {/* SEPARADOR: ACIDENTES / CARGA DANIFICADA */}
       {tab === 'incidents' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <form
-            onSubmit={handleIncidentSubmit}
-            className="bg-white rounded-2xl p-6 shadow-sm border space-y-4"
-          >
-            <h3 className="text-lg font-bold">
-              Reportar Carga Danificada / Acidente
-            </h3>
+          <form onSubmit={handleIncidentSubmit} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
+            <h3 className="text-lg font-bold">Reportar Carga Danificada / Acidente</h3>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Tipo de Ocorrência
-              </label>
-              <select
-                value={incType}
-                onChange={(e) => setIncType(e.target.value)}
-                className="w-full border rounded-xl p-2.5"
-              >
+              <label className="block text-sm font-semibold mb-1">Tipo de Ocorrência</label>
+              <select value={incType} onChange={(e) => setIncType(e.target.value)} className="w-full border rounded-xl p-2.5">
                 <option>Carga Danificada</option>
                 <option>Acidente com Camião</option>
                 <option>Incidente em Carga/Descarga</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Camião (Matrícula)
-              </label>
-              <select
-                value={incTruck}
-                onChange={(e) => setIncTruck(e.target.value)}
-                className="w-full border rounded-xl p-2.5"
-              >
+              <label className="block text-sm font-semibold mb-1">Camião (Matrícula)</label>
+              <select value={incTruck} onChange={(e) => setIncTruck(e.target.value)} className="w-full border rounded-xl p-2.5">
                 {trucks.map((t) => (
-                  <option key={t.id} value={t.plate}>
-                    {t.plate} - {t.model}
-                  </option>
+                  <option key={t.id} value={t.plate}>{t.plate} - {t.model}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Descrição
-              </label>
-              <textarea
-                required
-                rows={3}
-                value={incDesc}
-                onChange={(e) => setIncDesc(e.target.value)}
-                placeholder="Descreva o sucedido..."
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Descrição</label>
+              <textarea required rows={3} value={incDesc} onChange={(e) => setIncDesc(e.target.value)} placeholder="Descreva o sucedido..." className="w-full border rounded-xl p-2.5" />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Fotografia
-              </label>
+              <label className="block text-sm font-semibold mb-1">Fotografia</label>
               <input
                 type="file"
                 accept="image/*"
@@ -1175,85 +1029,45 @@ function DriverDashboard({
                 }}
                 className="w-full text-sm"
               />
-              {incPhoto && (
-                <img
-                  src={incPhoto}
-                  alt="Preview"
-                  className="mt-2 h-32 rounded-xl object-cover border"
-                />
-              )}
+              {incPhoto && <img src={incPhoto} alt="Preview" className="mt-2 h-32 rounded-xl object-cover border" />}
             </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl hover:bg-blue-800"
-            >
+            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl hover:bg-blue-800">
               Enviar Ocorrência
             </button>
           </form>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-3">
             <h3 className="text-lg font-bold">As Minhas Ocorrências</h3>
-            {incidents
-              .filter((i) => i.driverId === user.id)
-              .map((i) => (
-                <div
-                  key={i.id}
-                  className="border rounded-xl p-3 bg-slate-50 flex gap-3"
-                >
-                  {i.photo && (
-                    <img
-                      src={i.photo}
-                      alt=""
-                      className="w-16 h-16 rounded-lg object-cover"
-                    />
-                  )}
-                  <div>
-                    <p className="font-bold text-sm">
-                      {i.type} ({i.truckPlate})
-                    </p>
-                    <p className="text-xs text-slate-600">{i.description}</p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {formatDateTime(i.createdAt)}
-                    </p>
-                  </div>
+            {incidents.filter((i) => i.driverId === user.id).map((i) => (
+              <div key={i.id} className="border rounded-xl p-3 bg-slate-50 flex gap-3">
+                {i.photo && <img src={i.photo} alt="" className="w-16 h-16 rounded-lg object-cover" />}
+                <div>
+                  <p className="font-bold text-sm">{i.type} ({i.truckPlate})</p>
+                  <p className="text-xs text-slate-600">{i.description}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">{formatDateTime(i.createdAt)}</p>
                 </div>
-              ))}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* SEPARADOR: PEDIR MATERIAL */}
       {tab === 'materials' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <form
-            onSubmit={handleMaterialSubmit}
-            className="bg-white rounded-2xl p-6 shadow-sm border space-y-4"
-          >
+          <form onSubmit={handleMaterialSubmit} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
             <h3 className="text-lg font-bold">Pedir Material para o Camião</h3>
             <div>
               <label className="block text-sm font-semibold mb-1">Camião</label>
-              <select
-                value={matTruck}
-                onChange={(e) => setMatTruck(e.target.value)}
-                className="w-full border rounded-xl p-2.5"
-              >
+              <select value={matTruck} onChange={(e) => setMatTruck(e.target.value)} className="w-full border rounded-xl p-2.5">
                 {trucks.map((t) => (
-                  <option key={t.id} value={t.plate}>
-                    {t.plate} - {t.model}
-                  </option>
+                  <option key={t.id} value={t.plate}>{t.plate} - {t.model}</option>
                 ))}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-semibold mb-1">
-                  Material
-                </label>
-                <select
-                  value={matItem}
-                  onChange={(e) => setMatItem(e.target.value)}
-                  className="w-full border rounded-xl p-2.5"
-                >
+                <label className="block text-sm font-semibold mb-1">Material</label>
+                <select value={matItem} onChange={(e) => setMatItem(e.target.value)} className="w-full border rounded-xl p-2.5">
                   <option>Réguas</option>
                   <option>Líquido dos Vidros</option>
                   <option>Óleo do Motor</option>
@@ -1264,157 +1078,84 @@ function DriverDashboard({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold mb-1">
-                  Quantidade
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={matQty}
-                  onChange={(e) => setMatQty(e.target.value)}
-                  className="w-full border rounded-xl p-2.5"
-                />
+                <label className="block text-sm font-semibold mb-1">Quantidade</label>
+                <input type="number" min="1" value={matQty} onChange={(e) => setMatQty(e.target.value)} className="w-full border rounded-xl p-2.5" />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Observações
-              </label>
-              <textarea
-                rows={2}
-                value={matDesc}
-                onChange={(e) => setMatDesc(e.target.value)}
-                placeholder="Detalhes adicionais..."
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Observações</label>
+              <textarea rows={2} value={matDesc} onChange={(e) => setMatDesc(e.target.value)} placeholder="Detalhes adicionais..." className="w-full border rounded-xl p-2.5" />
             </div>
-            <button
-              type="submit"
-              className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl hover:bg-blue-800"
-            >
+            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl hover:bg-blue-800">
               Enviar Pedido de Material
             </button>
           </form>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-3">
             <h3 className="text-lg font-bold">Os Meus Pedidos</h3>
-            {materials
-              .filter((m) => m.driverId === user.id)
-              .map((m) => (
-                <div
-                  key={m.id}
-                  className="border rounded-xl p-3 bg-slate-50 flex justify-between items-center"
-                >
-                  <div>
-                    <p className="font-bold text-sm">
-                      {m.itemName} (x{m.quantity}) - {m.truckPlate}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatDateTime(m.createdAt)}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      m.delivered
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}
-                  >
-                    {m.delivered ? 'Entregue' : 'Pendente'}
-                  </span>
+            {materials.filter((m) => m.driverId === user.id).map((m) => (
+              <div key={m.id} className="border rounded-xl p-3 bg-slate-50 flex justify-between items-center">
+                <div>
+                  <p className="font-bold text-sm">{m.itemName} (x{m.quantity}) - {m.truckPlate}</p>
+                  <p className="text-xs text-slate-500">{formatDateTime(m.createdAt)}</p>
                 </div>
-              ))}
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${m.delivered ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {m.delivered ? 'Entregue' : 'Pendente'}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* SEPARADOR: ANOMALIAS CAMIÃO */}
       {tab === 'anomalies' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <form
-            onSubmit={handleAnomalySubmit}
-            className="bg-white rounded-2xl p-6 shadow-sm border space-y-4"
-          >
-            <h3 className="text-lg font-bold">
-              Reportar Anomalia / Avaria no Camião
-            </h3>
+          <form onSubmit={handleAnomalySubmit} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
+            <h3 className="text-lg font-bold">Reportar Anomalia / Avaria no Camião</h3>
             <div>
               <label className="block text-sm font-semibold mb-1">Camião</label>
-              <select
-                value={anomTruck}
-                onChange={(e) => setAnomTruck(e.target.value)}
-                className="w-full border rounded-xl p-2.5"
-              >
+              <select value={anomTruck} onChange={(e) => setAnomTruck(e.target.value)} className="w-full border rounded-xl p-2.5">
                 {trucks.map((t) => (
-                  <option key={t.id} value={t.plate}>
-                    {t.plate} - {t.model}
-                  </option>
+                  <option key={t.id} value={t.plate}>{t.plate} - {t.model}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Gravidade
-              </label>
-              <select
-                value={anomSeverity}
-                onChange={(e) => setAnomSeverity(e.target.value)}
-                className="w-full border rounded-xl p-2.5"
-              >
+              <label className="block text-sm font-semibold mb-1">Gravidade</label>
+              <select value={anomSeverity} onChange={(e) => setAnomSeverity(e.target.value)} className="w-full border rounded-xl p-2.5">
                 <option>Baixa</option>
                 <option>Média</option>
                 <option>Urgente (Imobiliza Camião)</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Descrição da Avaria
-              </label>
-              <textarea
-                required
-                rows={3}
-                value={anomDesc}
-                onChange={(e) => setAnomDesc(e.target.value)}
-                placeholder="Ex: Luz de travão fundida, fuga de ar..."
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Descrição da Avaria</label>
+              <textarea required rows={3} value={anomDesc} onChange={(e) => setAnomDesc(e.target.value)} placeholder="Ex: Luz de travão fundida, fuga de ar..." className="w-full border rounded-xl p-2.5" />
             </div>
-            <button
-              type="submit"
-              className="w-full bg-red-600 text-white font-bold py-3 rounded-xl hover:bg-red-700"
-            >
+            <button type="submit" className="w-full bg-red-600 text-white font-bold py-3 rounded-xl hover:bg-red-700">
               Reportar Anomalia
             </button>
           </form>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-3">
             <h3 className="text-lg font-bold">Anomalias Reportadas por Mim</h3>
-            {anomalies
-              .filter((a) => a.driverId === user.id)
-              .map((a) => (
-                <div key={a.id} className="border rounded-xl p-3 bg-red-50/50">
-                  <p className="font-bold text-sm text-red-800">
-                    {a.truckPlate} • {a.severity}
-                  </p>
-                  <p className="text-xs text-slate-700 mt-1">{a.description}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {formatDateTime(a.createdAt)}
-                  </p>
-                </div>
-              ))}
+            {anomalies.filter((a) => a.driverId === user.id).map((a) => (
+              <div key={a.id} className="border rounded-xl p-3 bg-red-50/50">
+                <p className="font-bold text-sm text-red-800">{a.truckPlate} • {a.severity}</p>
+                <p className="text-xs text-slate-700 mt-1">{a.description}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{formatDateTime(a.createdAt)}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* MODAL: HORAS EXTRA E OBSERVAÇÕES ANTES DE FECHAR TURNO */}
       {showEndForm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold">Fecho de Turno</h3>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Quantas horas extra fez hoje?
-              </label>
+              <label className="block text-sm font-semibold mb-1">Quantas horas extra fez hoje?</label>
               <input
                 type="number"
                 step="0.5"
@@ -1425,9 +1166,7 @@ function DriverDashboard({
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Observações (Opcional)
-              </label>
+              <label className="block text-sm font-semibold mb-1">Observações (Opcional)</label>
               <textarea
                 rows={3}
                 value={endNotes}
@@ -1437,10 +1176,7 @@ function DriverDashboard({
               />
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={() => setShowEndForm(false)}
-                className="flex-1 py-2.5 rounded-xl border font-semibold text-slate-600"
-              >
+              <button onClick={() => setShowEndForm(false)} className="flex-1 py-2.5 rounded-xl border font-semibold text-slate-600">
                 Cancelar
               </button>
               <button
@@ -1457,43 +1193,28 @@ function DriverDashboard({
         </div>
       )}
 
-      {/* MODAL: VALIDAÇÃO FOTO / IMPRESSÃO DIGITAL */}
       {validationAction && (
         <ValidationModal
-          title={
-            validationAction === 'start'
-              ? 'Validar Início de Turno'
-              : 'Validar Fim de Turno'
-          }
+          title={validationAction === 'start' ? 'Validar Início de Turno' : 'Validar Fim de Turno'}
           onConfirm={handleConfirmValidation}
           onCancel={() => setValidationAction(null)}
         />
       )}
 
-      {/* MODAL: ALERTA SMS 4 HORAS DE CONDUÇÃO */}
       {smsAlertOpen && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-t-8 border-red-600 space-y-4">
             <div className="flex items-center gap-3 text-red-600">
               <AlertTriangle className="w-8 h-8" />
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider">
-                  SMS DE AVISO - JJTEIXEIRA
-                </p>
-                <h3 className="text-lg font-extrabold">
-                  4 Horas de Condução Contínua!
-                </h3>
+                <p className="text-xs font-bold uppercase tracking-wider">SMS DE AVISO - JJTEIXEIRA</p>
+                <h3 className="text-lg font-extrabold">4 Horas de Condução Contínua!</h3>
               </div>
             </div>
             <p className="text-sm text-slate-700">
-              Atingiu <strong>4 horas seguidas de condução</strong>. Apenas
-              dispõe de mais <strong>30 minutos</strong> antes de ser
-              obrigatório realizar uma pausa regulamentar.
+              Atingiu <strong>4 horas seguidas de condução</strong>. Apenas dispõe de mais <strong>30 minutos</strong> antes de ser obrigatório realizar uma pausa regulamentar.
             </p>
-            <button
-              onClick={acknowledgeSms}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl"
-            >
+            <button onClick={acknowledgeSms} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl">
               Validar e Confirmar Receção da SMS
             </button>
           </div>
@@ -1507,46 +1228,26 @@ function DriverDashboard({
 // PAINEL DO GESTOR DE TRÁFEGO
 // ==========================================
 function ManagerDashboard({
-  now,
-  users,
-  setUsers,
-  shifts,
-  setShifts,
-  incidents,
-  materials,
-  setMaterials,
-  trucks,
-  setTrucks,
-  anomalies,
-  setAnomalies,
-  alerts,
-  setAlerts,
+  now, users, setUsers, shifts, setShifts, incidents,
+  materials, setMaterials, trucks, setTrucks, anomalies,
+  setAnomalies, alerts, setAlerts
 }) {
-  const [tab, setTab] = useState('timesheet'); // timesheet | overtime | incidents | materials | trucks | drivers
+  const [tab, setTab] = useState('timesheet');
   const [filterDriver, setFilterDriver] = useState('all');
   const [editingShift, setEditingShift] = useState(null);
-  const [newDriver, setNewDriver] = useState({
-    name: '',
-    username: '',
-    password: '',
-  });
+  const [newDriver, setNewDriver] = useState({ name: '', username: '', password: '' });
   const [newTruck, setNewTruck] = useState({ plate: '', model: '' });
 
   const drivers = users.filter((u) => u.role === 'driver');
 
   const getLiveDuration = (s) => {
     if (s.endTime) return s.drivingSeconds;
-    const elapsed = Math.max(
-      0,
-      Math.floor((now.getTime() - new Date(s.lastStateChange).getTime()) / 1000)
-    );
+    const elapsed = Math.max(0, Math.floor((now.getTime() - new Date(s.lastStateChange).getTime()) / 1000));
     return s.drivingSeconds + (s.status === 'driving' ? elapsed : 0);
   };
 
   const validateShift = (id) => {
-    setShifts((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, validatedByManager: true } : s))
-    );
+    setShifts((prev) => prev.map((s) => (s.id === id ? { ...s, validatedByManager: true } : s)));
   };
 
   const saveShiftEdit = (e) => {
@@ -1557,10 +1258,8 @@ function ManagerDashboard({
           ? {
               ...s,
               startTime: new Date(editingShift.startTime).toISOString(),
-              endTime: editingShift.endTime
-                ? new Date(editingShift.endTime).toISOString()
-                : null,
-              overtimeHours: parseFloat(editingShift.overtimeHours) || 0,
+              endTime: editingShift.endTime ? new Date(editingShift.endTime).toISOString() : null,
+              overtimeHours: parseFloat(editingShift.overtimeHours) || 0
             }
           : s
       )
@@ -1581,10 +1280,10 @@ function ManagerDashboard({
                   description: anom.description,
                   reportedBy: anom.driverName,
                   reportedAt: anom.createdAt,
-                  repairedAt: new Date().toISOString(),
+                  repairedAt: new Date().toISOString()
                 },
-                ...(t.history || []),
-              ],
+                ...(t.history || [])
+              ]
             }
           : t
       )
@@ -1594,62 +1293,41 @@ function ManagerDashboard({
   const createDriver = (e) => {
     e.preventDefault();
     if (!newDriver.name || !newDriver.username || !newDriver.password) return;
-    setUsers((prev) => [
-      ...prev,
-      { id: `drv-${Date.now()}`, ...newDriver, role: 'driver' },
-    ]);
+    setUsers((prev) => [...prev, { id: `drv-${Date.now()}`, ...newDriver, role: 'driver' }]);
     setNewDriver({ name: '', username: '', password: '' });
   };
 
   const createTruck = (e) => {
     e.preventDefault();
     if (!newTruck.plate) return;
-    setTrucks((prev) => [
-      ...prev,
-      { id: `t-${Date.now()}`, ...newTruck, history: [] },
-    ]);
+    setTrucks((prev) => [...prev, { id: `t-${Date.now()}`, ...newTruck, history: [] }]);
     setNewTruck({ plate: '', model: '' });
   };
 
   const filteredShifts =
-    filterDriver === 'all'
-      ? shifts
-      : shifts.filter((s) => s.driverId === filterDriver);
+    filterDriver === 'all' ? shifts : shifts.filter((s) => s.driverId === filterDriver);
 
   return (
     <div className="space-y-6">
-      {/* ALERTAS EM TEMPO REAL */}
       {alerts.length > 0 && (
         <div className="bg-red-50 border-2 border-red-400 rounded-2xl p-4 shadow-md space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-extrabold text-red-800 flex items-center gap-2">
-              <Bell className="w-5 h-5 animate-bounce" /> Novos Alertas (
-              {alerts.length})
+              <Bell className="w-5 h-5 animate-bounce" /> Novos Alertas ({alerts.length})
             </h3>
-            <button
-              onClick={() => setAlerts([])}
-              className="text-xs font-semibold text-red-700 hover:underline"
-            >
+            <button onClick={() => setAlerts([])} className="text-xs font-semibold text-red-700 hover:underline">
               Limpar todos os alertas
             </button>
           </div>
           <div className="space-y-2">
             {alerts.map((al) => (
-              <div
-                key={al.id}
-                className="bg-white rounded-xl p-3 border border-red-200 flex flex-wrap justify-between items-center gap-3"
-              >
+              <div key={al.id} className="bg-white rounded-xl p-3 border border-red-200 flex flex-wrap justify-between items-center gap-3">
                 <div>
                   <p className="font-bold text-sm text-slate-800">
-                    {al.category === 'material'
-                      ? '📦 Pedido de Material'
-                      : '🔧 Anomalia de Camião'}{' '}
-                    — {al.truckPlate}
+                    {al.category === 'material' ? '📦 Pedido de Material' : '🔧 Anomalia de Camião'} — {al.truckPlate}
                   </p>
                   <p className="text-xs text-slate-600">
-                    Motorista: <strong>{al.driverName}</strong> •{' '}
-                    {al.itemName ? `${al.itemName} (x${al.quantity}) ` : ''}
-                    {al.description}
+                    Motorista: <strong>{al.driverName}</strong> • {al.itemName ? `${al.itemName} (x${al.quantity}) ` : ''}{al.description}
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -1660,9 +1338,7 @@ function ManagerDashboard({
                     <Download className="w-3.5 h-3.5" /> Gerar PDF
                   </button>
                   <button
-                    onClick={() =>
-                      setAlerts((prev) => prev.filter((x) => x.id !== al.id))
-                    }
+                    onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== al.id))}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold px-3 py-2 rounded-lg"
                   >
                     Fechar
@@ -1674,7 +1350,6 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* Navegação Gestor */}
       <div className="flex flex-wrap gap-2 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
         {[
           { id: 'timesheet', label: 'Livro de Ponto', icon: Clock },
@@ -1682,15 +1357,13 @@ function ManagerDashboard({
           { id: 'incidents', label: 'Ocorrências', icon: Camera },
           { id: 'materials', label: 'Material', icon: Package },
           { id: 'trucks', label: 'Camiões & Avarias', icon: Truck },
-          { id: 'drivers', label: 'Motoristas', icon: Users },
+          { id: 'drivers', label: 'Motoristas', icon: Users }
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition ${
-              tab === t.id
-                ? 'bg-blue-800 text-white shadow'
-                : 'text-slate-600 hover:bg-slate-100'
+              tab === t.id ? 'bg-blue-800 text-white shadow' : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
             <t.icon className="w-4 h-4" /> {t.label}
@@ -1698,21 +1371,14 @@ function ManagerDashboard({
         ))}
       </div>
 
-      {/* 1. LIVRO DE PONTO */}
       {tab === 'timesheet' && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
           <div className="flex flex-wrap justify-between items-center gap-3">
             <h2 className="text-lg font-bold">Livro de Ponto (Tempo Real)</h2>
-            <select
-              value={filterDriver}
-              onChange={(e) => setFilterDriver(e.target.value)}
-              className="border rounded-xl px-3 py-2 text-sm"
-            >
+            <select value={filterDriver} onChange={(e) => setFilterDriver(e.target.value)} className="border rounded-xl px-3 py-2 text-sm">
               <option value="all">Todos os Motoristas</option>
               {drivers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
+                <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
           </div>
@@ -1739,18 +1405,12 @@ function ManagerDashboard({
                     </td>
                     <td className="p-3 font-mono font-bold text-blue-800">
                       {formatDuration(getLiveDuration(s))}
-                      {!s.endTime && (
-                        <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
-                          ATIVO
-                        </span>
-                      )}
+                      {!s.endTime && <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">ATIVO</span>}
                     </td>
                     <td className="p-3 font-bold">{s.overtimeHours || 0}h</td>
                     <td className="p-3 text-xs text-slate-500">
                       <div>GPS: {s.startLocation?.label}</div>
-                      {s.notes && (
-                        <div className="italic text-slate-700">"{s.notes}"</div>
-                      )}
+                      {s.notes && <div className="italic text-slate-700">"{s.notes}"</div>}
                     </td>
                     <td className="p-3 text-right space-x-2">
                       <button
@@ -1759,7 +1419,7 @@ function ManagerDashboard({
                             id: s.id,
                             startTime: toDatetimeLocal(s.startTime),
                             endTime: toDatetimeLocal(s.endTime),
-                            overtimeHours: s.overtimeHours || 0,
+                            overtimeHours: s.overtimeHours || 0
                           })
                         }
                         className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1"
@@ -1774,9 +1434,7 @@ function ManagerDashboard({
                           <CheckCircle className="w-3.5 h-3.5" /> Validar
                         </button>
                       ) : (
-                        <span className="text-emerald-600 font-bold text-xs">
-                          ✓ Validado
-                        </span>
+                        <span className="text-emerald-600 font-bold text-xs">✓ Validado</span>
                       )}
                     </td>
                   </tr>
@@ -1787,33 +1445,22 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* 2. CONTABILIDADE HORAS EXTRA */}
       {tab === 'overtime' && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
-          <h2 className="text-lg font-bold">
-            Contabilidade de Horas Extra por Motorista
-          </h2>
+          <h2 className="text-lg font-bold">Contabilidade de Horas Extra por Motorista</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {drivers.map((d) => {
               const total = shifts
                 .filter((s) => s.driverId === d.id)
-                .reduce(
-                  (acc, s) => acc + (parseFloat(s.overtimeHours) || 0),
-                  0
-                );
+                .reduce((acc, s) => acc + (parseFloat(s.overtimeHours) || 0), 0);
               return (
-                <div
-                  key={d.id}
-                  className="border rounded-2xl p-4 bg-slate-50 flex justify-between items-center"
-                >
+                <div key={d.id} className="border rounded-2xl p-4 bg-slate-50 flex justify-between items-center">
                   <div>
                     <p className="font-bold text-slate-800">{d.name}</p>
                     <p className="text-xs text-slate-500">@{d.username}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-extrabold text-blue-800">
-                      {total}h
-                    </p>
+                    <p className="text-2xl font-extrabold text-blue-800">{total}h</p>
                     <p className="text-[11px] text-slate-500">Acumuladas</p>
                   </div>
                 </div>
@@ -1823,32 +1470,16 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* 3. OCORRÊNCIAS */}
       {tab === 'incidents' && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
-          <h2 className="text-lg font-bold">
-            Ocorrências (Carga Danificada / Acidentes)
-          </h2>
+          <h2 className="text-lg font-bold">Ocorrências (Carga Danificada / Acidentes)</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {incidents.map((i) => (
-              <div
-                key={i.id}
-                className="border rounded-xl p-4 flex gap-4 bg-slate-50"
-              >
-                {i.photo && (
-                  <img
-                    src={i.photo}
-                    alt=""
-                    className="w-24 h-24 rounded-xl object-cover border"
-                  />
-                )}
+              <div key={i.id} className="border rounded-xl p-4 flex gap-4 bg-slate-50">
+                {i.photo && <img src={i.photo} alt="" className="w-24 h-24 rounded-xl object-cover border" />}
                 <div>
-                  <p className="font-bold text-red-700">
-                    {i.type} — {i.truckPlate}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Motorista: {i.driverName} • {formatDateTime(i.createdAt)}
-                  </p>
+                  <p className="font-bold text-red-700">{i.type} — {i.truckPlate}</p>
+                  <p className="text-xs text-slate-500">Motorista: {i.driverName} • {formatDateTime(i.createdAt)}</p>
                   <p className="text-sm text-slate-700 mt-2">{i.description}</p>
                 </div>
               </div>
@@ -1857,48 +1488,29 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* 4. MATERIAL */}
       {tab === 'materials' && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
           <h2 className="text-lg font-bold">Pedidos de Material</h2>
           <div className="space-y-3">
             {materials.map((m) => (
-              <div
-                key={m.id}
-                className="border rounded-xl p-4 flex flex-wrap justify-between items-center gap-3 bg-slate-50"
-              >
+              <div key={m.id} className="border rounded-xl p-4 flex flex-wrap justify-between items-center gap-3 bg-slate-50">
                 <div>
-                  <p className="font-bold">
-                    {m.itemName} (x{m.quantity}) — {m.truckPlate}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Motorista: {m.driverName} • {formatDateTime(m.createdAt)}
-                  </p>
-                  {m.description && (
-                    <p className="text-xs text-slate-600 mt-1">
-                      {m.description}
-                    </p>
-                  )}
+                  <p className="font-bold">{m.itemName} (x{m.quantity}) — {m.truckPlate}</p>
+                  <p className="text-xs text-slate-500">Motorista: {m.driverName} • {formatDateTime(m.createdAt)}</p>
+                  {m.description && <p className="text-xs text-slate-600 mt-1">{m.description}</p>}
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => generateAnomalyPDF(m)}
-                    className="px-3 py-1.5 bg-blue-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1"
-                  >
+                  <button onClick={() => generateAnomalyPDF(m)} className="px-3 py-1.5 bg-blue-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1">
                     <Download className="w-3.5 h-3.5" /> Gerar PDF
                   </button>
                   <button
                     onClick={() =>
                       setMaterials((prev) =>
-                        prev.map((x) =>
-                          x.id === m.id ? { ...x, delivered: !x.delivered } : x
-                        )
+                        prev.map((x) => (x.id === m.id ? { ...x, delivered: !x.delivered } : x))
                       )
                     }
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                      m.delivered
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-amber-500 text-white'
+                      m.delivered ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-500 text-white'
                     }`}
                   >
                     {m.delivered ? '✓ Entregue' : 'Marcar Entregue'}
@@ -1910,43 +1522,26 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* 5. CAMIÕES & AVARIAS */}
       {tab === 'trucks' && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
             <h2 className="text-lg font-bold text-red-700">Anomalias Ativas</h2>
             {anomalies.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Nenhuma anomalia ativa de momento.
-              </p>
+              <p className="text-sm text-slate-500">Nenhuma anomalia ativa de momento.</p>
             ) : (
               <div className="space-y-3">
                 {anomalies.map((a) => (
-                  <div
-                    key={a.id}
-                    className="border border-red-200 bg-red-50/40 rounded-xl p-4 flex flex-wrap justify-between items-center gap-3"
-                  >
+                  <div key={a.id} className="border border-red-200 bg-red-50/40 rounded-xl p-4 flex flex-wrap justify-between items-center gap-3">
                     <div>
-                      <p className="font-bold text-red-800">
-                        {a.truckPlate} • {a.severity}
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        Reportado por {a.driverName} em{' '}
-                        {formatDateTime(a.createdAt)}
-                      </p>
+                      <p className="font-bold text-red-800">{a.truckPlate} • {a.severity}</p>
+                      <p className="text-xs text-slate-600">Reportado por {a.driverName} em {formatDateTime(a.createdAt)}</p>
                       <p className="text-sm mt-1">{a.description}</p>
                     </div>
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => generateAnomalyPDF(a)}
-                        className="px-3 py-2 bg-blue-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1"
-                      >
+                      <button onClick={() => generateAnomalyPDF(a)} className="px-3 py-2 bg-blue-700 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1">
                         <Download className="w-3.5 h-3.5" /> Gerar PDF
                       </button>
-                      <button
-                        onClick={() => repairAnomaly(a)}
-                        className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold"
-                      >
+                      <button onClick={() => repairAnomaly(a)} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold">
                         Reparado / Apagar
                       </button>
                     </div>
@@ -1957,55 +1552,24 @@ function ManagerDashboard({
           </div>
 
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
-            <h2 className="text-lg font-bold">
-              Frota & Histórico de Reparações
-            </h2>
+            <h2 className="text-lg font-bold">Frota & Histórico de Reparações</h2>
             <form onSubmit={createTruck} className="flex flex-wrap gap-2">
-              <input
-                placeholder="Matrícula (ex: GG-78-HH)"
-                value={newTruck.plate}
-                onChange={(e) =>
-                  setNewTruck({ ...newTruck, plate: e.target.value })
-                }
-                className="border rounded-xl px-3 py-2 text-sm"
-              />
-              <input
-                placeholder="Modelo (ex: DAF XF)"
-                value={newTruck.model}
-                onChange={(e) =>
-                  setNewTruck({ ...newTruck, model: e.target.value })
-                }
-                className="border rounded-xl px-3 py-2 text-sm"
-              />
-              <button
-                type="submit"
-                className="bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold"
-              >
+              <input placeholder="Matrícula (ex: GG-78-HH)" value={newTruck.plate} onChange={(e) => setNewTruck({ ...newTruck, plate: e.target.value })} className="border rounded-xl px-3 py-2 text-sm" />
+              <input placeholder="Modelo (ex: DAF XF)" value={newTruck.model} onChange={(e) => setNewTruck({ ...newTruck, model: e.target.value })} className="border rounded-xl px-3 py-2 text-sm" />
+              <button type="submit" className="bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold">
                 + Adicionar Camião
               </button>
             </form>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {trucks.map((t) => (
-                <div
-                  key={t.id}
-                  className="border rounded-xl p-4 bg-slate-50 space-y-2"
-                >
-                  <p className="font-bold text-slate-800">
-                    {t.plate} — {t.model}
-                  </p>
-                  <p className="text-xs font-semibold text-slate-500 uppercase">
-                    Histórico de Reparações ({t.history?.length || 0})
-                  </p>
+                <div key={t.id} className="border rounded-xl p-4 bg-slate-50 space-y-2">
+                  <p className="font-bold text-slate-800">{t.plate} — {t.model}</p>
+                  <p className="text-xs font-semibold text-slate-500 uppercase">Histórico de Reparações ({t.history?.length || 0})</p>
                   {(t.history || []).map((h) => (
-                    <div
-                      key={h.id}
-                      className="text-xs bg-white p-2 rounded border"
-                    >
+                    <div key={h.id} className="text-xs bg-white p-2 rounded border">
                       <p className="font-semibold">{h.description}</p>
-                      <p className="text-slate-400">
-                        Reparado em {formatDateTime(h.repairedAt)}
-                      </p>
+                      <p className="text-slate-400">Reparado em {formatDateTime(h.repairedAt)}</p>
                     </div>
                   ))}
                 </div>
@@ -2015,46 +1579,14 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* 6. GESTÃO DE MOTORISTAS */}
       {tab === 'drivers' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <form
-            onSubmit={createDriver}
-            className="bg-white rounded-2xl p-6 shadow-sm border space-y-4"
-          >
+          <form onSubmit={createDriver} className="bg-white rounded-2xl p-6 shadow-sm border space-y-4">
             <h3 className="text-lg font-bold">Criar Conta de Motorista</h3>
-            <input
-              required
-              placeholder="Nome Completo"
-              value={newDriver.name}
-              onChange={(e) =>
-                setNewDriver({ ...newDriver, name: e.target.value })
-              }
-              className="w-full border rounded-xl p-2.5"
-            />
-            <input
-              required
-              placeholder="Utilizador (login)"
-              value={newDriver.username}
-              onChange={(e) =>
-                setNewDriver({ ...newDriver, username: e.target.value })
-              }
-              className="w-full border rounded-xl p-2.5"
-            />
-            <input
-              required
-              type="password"
-              placeholder="Palavra-passe"
-              value={newDriver.password}
-              onChange={(e) =>
-                setNewDriver({ ...newDriver, password: e.target.value })
-              }
-              className="w-full border rounded-xl p-2.5"
-            />
-            <button
-              type="submit"
-              className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl"
-            >
+            <input required placeholder="Nome Completo" value={newDriver.name} onChange={(e) => setNewDriver({ ...newDriver, name: e.target.value })} className="w-full border rounded-xl p-2.5" />
+            <input required placeholder="Utilizador (login)" value={newDriver.username} onChange={(e) => setNewDriver({ ...newDriver, username: e.target.value })} className="w-full border rounded-xl p-2.5" />
+            <input required type="password" placeholder="Palavra-passe" value={newDriver.password} onChange={(e) => setNewDriver({ ...newDriver, password: e.target.value })} className="w-full border rounded-xl p-2.5" />
+            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-3 rounded-xl">
               Criar Motorista
             </button>
           </form>
@@ -2062,22 +1594,12 @@ function ManagerDashboard({
           <div className="bg-white rounded-2xl p-6 shadow-sm border space-y-3">
             <h3 className="text-lg font-bold">Motoristas Registados</h3>
             {drivers.map((d) => (
-              <div
-                key={d.id}
-                className="border rounded-xl p-3 flex justify-between items-center bg-slate-50"
-              >
+              <div key={d.id} className="border rounded-xl p-3 flex justify-between items-center bg-slate-50">
                 <div>
                   <p className="font-bold text-sm">{d.name}</p>
-                  <p className="text-xs text-slate-500">
-                    User: {d.username} | Pass: {d.password}
-                  </p>
+                  <p className="text-xs text-slate-500">User: {d.username} | Pass: {d.password}</p>
                 </div>
-                <button
-                  onClick={() =>
-                    setUsers((prev) => prev.filter((u) => u.id !== d.id))
-                  }
-                  className="text-red-500 hover:text-red-700 p-2"
-                >
+                <button onClick={() => setUsers((prev) => prev.filter((u) => u.id !== d.id))} className="text-red-500 hover:text-red-700 p-2">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -2086,74 +1608,27 @@ function ManagerDashboard({
         </div>
       )}
 
-      {/* MODAL EDITAR TURNO */}
       {editingShift && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <form
-            onSubmit={saveShiftEdit}
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4"
-          >
+          <form onSubmit={saveShiftEdit} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold">Editar Horário do Turno</h3>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Hora de Início
-              </label>
-              <input
-                type="datetime-local"
-                required
-                value={editingShift.startTime}
-                onChange={(e) =>
-                  setEditingShift({
-                    ...editingShift,
-                    startTime: e.target.value,
-                  })
-                }
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Hora de Início</label>
+              <input type="datetime-local" required value={editingShift.startTime} onChange={(e) => setEditingShift({ ...editingShift, startTime: e.target.value })} className="w-full border rounded-xl p-2.5" />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Hora de Fim
-              </label>
-              <input
-                type="datetime-local"
-                value={editingShift.endTime}
-                onChange={(e) =>
-                  setEditingShift({ ...editingShift, endTime: e.target.value })
-                }
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Hora de Fim</label>
+              <input type="datetime-local" value={editingShift.endTime} onChange={(e) => setEditingShift({ ...editingShift, endTime: e.target.value })} className="w-full border rounded-xl p-2.5" />
             </div>
             <div>
-              <label className="block text-sm font-semibold mb-1">
-                Horas Extra
-              </label>
-              <input
-                type="number"
-                step="0.5"
-                min="0"
-                value={editingShift.overtimeHours}
-                onChange={(e) =>
-                  setEditingShift({
-                    ...editingShift,
-                    overtimeHours: e.target.value,
-                  })
-                }
-                className="w-full border rounded-xl p-2.5"
-              />
+              <label className="block text-sm font-semibold mb-1">Horas Extra</label>
+              <input type="number" step="0.5" min="0" value={editingShift.overtimeHours} onChange={(e) => setEditingShift({ ...editingShift, overtimeHours: e.target.value })} className="w-full border rounded-xl p-2.5" />
             </div>
             <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setEditingShift(null)}
-                className="flex-1 py-2.5 rounded-xl border font-semibold"
-              >
+              <button type="button" onClick={() => setEditingShift(null)} className="flex-1 py-2.5 rounded-xl border font-semibold">
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 rounded-xl bg-blue-700 text-white font-bold"
-              >
+              <button type="submit" className="flex-1 py-2.5 rounded-xl bg-blue-700 text-white font-bold">
                 Guardar Alterações
               </button>
             </div>
